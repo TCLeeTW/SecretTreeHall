@@ -8,7 +8,8 @@ const mongoose = require("mongoose");
 const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const FacebookStrategy=require("passport-facebook").Strategy;
 const findOrCreate=require("mongoose-findorcreate");
 
 
@@ -36,7 +37,8 @@ mongoose.connect("mongodb://127.0.0.1:27017/userDB", {
 const userSchema = new mongoose.Schema({
   email: String,
   password: String,
-  googleId:String
+  googleId:String,
+  facebookId:String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -62,6 +64,8 @@ passport.deserializeUser(function(user, cb) {
     return cb(null, user);
   });
 });
+
+
 passport.use(new GoogleStrategy({
     clientID: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
@@ -70,15 +74,32 @@ passport.use(new GoogleStrategy({
   },
   function(accessToken, refreshToken, profile, cb) {
     console.log(profile);
-    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+    User.findOrCreate({ socialID: profile.id }, function (err, user) {
       return cb(err, user);
     });
   }
 ));
 
-app.get("/", function(req, res) {
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_APP_ID,
+    clientSecret: process.env.FACEBOOK_APP_SECRET,
+    callbackURL: "http://localhost:3000/auth/facebook/secrets",
+    profileFields: ['id', 'displayName', 'photos', 'email']
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    User.findOrCreate({ facebookId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+app.route("/")
+.get( function(req, res) {
   res.render("home")
 })
+
+
 
 app.get("/auth/google",
   passport.authenticate("google",{scope:["profile"]})
@@ -91,45 +112,22 @@ app.get("/auth/google/secrets",
     res.redirect("/secrets");
   });
 
-app.get("/login", function(req, res) {
+app.get("/auth/facebook",
+  passport.authenticate('facebook'));
+
+app.get("/auth/facebook/secrets",
+  passport.authenticate("facebook", { failureRedirect: "/login" }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect("/secrets");
+  });
+
+
+app.route("/login")
+.get(function(req, res) {
   res.render("login")
 })
-app.get("/register", function(req, res) {
-  res.render("register")
-})
-
-app.get("/secrets", function(req, res) {
-  if (req.isAuthenticated()) {
-    res.render("secrets");
-  } else {
-    res.redirect("/login");
-  }
-})
-
-app.get("/logout", function(req, res, next) {
-  req.logout(function(err) {
-    if (err) { return next(err); }
-    res.redirect('/');
-  });
-})
-
-app.post("/register", function(req, res) {
-  User.register({
-    username: req.body.username
-  }, req.body.password, function(err, user) {
-    if (err) {
-      console.log(err);
-      res.redirect("/register");
-    } else {
-      passport.authenticate("local")(req, res, function() {
-        res.redirect("/secrets")
-      })
-    }
-  })
-
-})
-
-app.post("/login", function(req, res) {
+.post(function(req, res) {
   const user = new User({
     username: req.body.username,
     password: req.body.password
@@ -146,7 +144,48 @@ app.post("/login", function(req, res) {
       });
     };
   })
+});
+
+
+
+app.route("/register")
+.get(function(req, res) {
+  res.render("register")
 })
+.post(function(req, res) {
+  User.register({
+    username: req.body.username
+  }, req.body.password, function(err, user) {
+    if (err) {
+      console.log(err);
+      res.redirect("/register");
+    } else {
+      passport.authenticate("local")(req, res, function() {
+        res.redirect("/secrets")
+      })
+    }
+  })
+});
+
+app.route("/secrets")
+.get(function(req, res) {
+  if (req.isAuthenticated()) {
+    res.render("secrets");
+  } else {
+    res.redirect("/login");
+  }
+});
+
+app.route("/logout")
+.get(function(req, res, next) {
+  req.logout(function(err) {
+    if (err) { return next(err); }
+    res.redirect('/');
+  });
+});
+
+
+
 
 
 
